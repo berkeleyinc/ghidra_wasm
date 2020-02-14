@@ -19,11 +19,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.*;
 
-import ghidra.app.util.MemoryBlockUtil;
+import ghidra.app.util.MemoryBlockUtils;
 import ghidra.app.util.Option;
 import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.ByteProvider;
-import ghidra.app.util.importer.MemoryConflictHandler;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.app.util.opinion.AbstractLibrarySupportLoader;
 import ghidra.app.util.opinion.LoadSpec;
@@ -55,7 +54,6 @@ import wasm.format.sections.WasmCodeSection;
 import wasm.format.sections.WasmExportSection;
 import wasm.format.sections.WasmImportSection;
 import wasm.format.sections.WasmSection;
-import wasm.format.sections.WasmSection.WasmSectionId;
 import wasm.format.sections.structures.WasmExportEntry;
 import wasm.format.sections.structures.WasmFunctionBody;
 import wasm.format.sections.structures.WasmLocalEntry.WasmLocalType;
@@ -105,8 +103,6 @@ public class WasmLoader extends AbstractLibrarySupportLoader {
 		block.setWrite( false );
 		block.setExecute( false );
 	}
-
-	private MemoryBlockUtil mbu; 
 	
 	
 	public Data createData(Program program, Listing listing, Address address, DataType dt) {
@@ -134,7 +130,7 @@ public class WasmLoader extends AbstractLibrarySupportLoader {
 		String BLOCK_SOURCE_NAME = "Wasm Header";
 		Address start = program.getAddressFactory().getDefaultAddressSpace().getAddress( 0x0 );
 		try {
-			mbu.createInitializedBlock(".header", start, reader, 8, "", BLOCK_SOURCE_NAME, r, w, x, monitor);
+			MemoryBlockUtils.createInitializedBlock(program, false, ".header", start, reader, 8, "", BLOCK_SOURCE_NAME, r, w, x, _log, monitor);
 			createData(program, program.getListing(), start, header.toDataType());
 		} catch (AddressOverflowException e) {
 			// TODO Auto-generated catch block
@@ -149,7 +145,7 @@ public class WasmLoader extends AbstractLibrarySupportLoader {
 		String BLOCK_SOURCE_NAME = "Wasm Section";
 		for (WasmSection section: module.getSections()) {
 			Address start = program.getAddressFactory().getDefaultAddressSpace().getAddress(section.getSectionOffset());
-			mbu.createInitializedBlock(section.getPayload().getName(), start, reader, section.getSectionSize(), "", BLOCK_SOURCE_NAME, r, w, x, monitor);
+			MemoryBlockUtils.createInitializedBlock(program, false, section.getPayload().getName(), start, reader, section.getSectionSize(), "", BLOCK_SOURCE_NAME, r, w, x, _log, monitor);
 			createData(program, program.getListing(), start, section.toDataType());			
 		}
 	}
@@ -161,11 +157,13 @@ public class WasmLoader extends AbstractLibrarySupportLoader {
 		}
 		return "Method_" + id;
 	}
+  MessageLog _log;
 	
 	@Override
 	protected void load(ByteProvider provider, LoadSpec loadSpec, List<Option> options,
-		Program program, MemoryConflictHandler handler, TaskMonitor monitor, MessageLog log)
+		Program program, TaskMonitor monitor, MessageLog log)
 		throws CancelledException, IOException {
+    _log = log;
 	
 		monitor.setMessage( "Wasm Loader: Start loading" );
 		
@@ -175,7 +173,6 @@ public class WasmLoader extends AbstractLibrarySupportLoader {
 	
 			InputStream inputStream;
 			inputStream = provider.getInputStream(0);
-			mbu = new MemoryBlockUtil(program, handler);
 
 			
 			BinaryReader reader = new BinaryReader( provider, true );
@@ -205,7 +202,7 @@ public class WasmLoader extends AbstractLibrarySupportLoader {
 						//The function index space begins with an index for each imported function, 
 						//in the order the imports appear in the Import Section, if present, 
 						//followed by an index for each function in the Function Section, 
-						int imports_offset = ((WasmImportSection)module.getSection(WasmSectionId.SEC_IMPORT).getPayload()).getCount();
+						int imports_offset = ((WasmImportSection)(module.getSection(WasmSectionId.SEC_IMPORT).getPayload())).getCount();
 						program.getFunctionManager().createFunction(getMethodName((WasmExportSection)module.getSection(WasmSectionId.SEC_EXPORT).getPayload(), i + imports_offset), methodAddress, new AddressSet(methodAddress, methodend), SourceType.ANALYSIS);
 						lookupOffset += 4;
 					}
@@ -227,7 +224,7 @@ public class WasmLoader extends AbstractLibrarySupportLoader {
 	}
 
 	@Override
-	public String validateOptions(ByteProvider provider, LoadSpec loadSpec, List<Option> options) {
-		return super.validateOptions(provider, loadSpec, options);
+	public String validateOptions(ByteProvider provider, LoadSpec loadSpec, List<Option> options, Program program) {
+		return super.validateOptions(provider, loadSpec, options, program);
 	}
 }
